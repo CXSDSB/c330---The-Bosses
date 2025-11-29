@@ -1,74 +1,110 @@
 using UnityEngine;
 
+
 public class EnemyPatrol : MonoBehaviour
 {
     public Transform[] patrolPoints;
     public float speed = 2f;
-    public float detectRange = 20f;   // 发现玩家距离
-    public float chaseTriggerRange = 10f; // 追击距离
+    public float detectRange = 6f;        // 视野范围（可不用）
+    public float chaseTriggerRange = 4f;  // 玩家进入这个范围后追击
     public Transform player;
 
+
     private int currentPoint = 0;
-    private bool isChasing = false;
+
+
+    void Start()
+    {
+        // 开局关闭追逐和攻击，保证只巡逻
+        EnemyChase chase = GetComponent<EnemyChase>();
+        if (chase != null) chase.enabled = false;
+
+
+        EnemyAttack attack = GetComponent<EnemyAttack>();
+        if (attack != null) attack.enabled = false;
+    }
+
 
     void Update()
     {
-        if (player == null || patrolPoints.Length == 0) return;
+        // 1) 必须有巡逻点
+        if (patrolPoints == null || patrolPoints.Length == 0)
+            return;
 
-        // 计算2D平面距离
-        float distanceToPlayer = Vector2.Distance(
-            new Vector2(transform.position.x, transform.position.y),
-            new Vector2(player.position.x, player.position.y)
-        );
 
-        // 🟢 距离大于detectRange：继续巡逻
-        if (distanceToPlayer > detectRange)
+        // 2) 永远先巡逻
+        Patrol();
+
+
+        // 3) 玩家还没设 → 只巡逻
+        if (player == null)
+            return;
+
+
+        // 4) 计算玩家距离
+        float distanceToPlayer = Vector2.Distance(transform.position, player.position);
+
+
+        // 5) 玩家进入追逐范围 → 切换到 EnemyChase
+        if (distanceToPlayer <= chaseTriggerRange)
         {
-            if (isChasing)
+            Debug.Log($"🔴 Player entered chase range ({distanceToPlayer:F2}) → Switch to Chase");
+
+
+            EnemyChase chase = GetComponent<EnemyChase>();
+            if (chase != null)
             {
-                // 玩家跑远 -> 回到巡逻状态
-                isChasing = false;
-                GetComponent<EnemyChase>().enabled = false;
-                Debug.Log("🔵 Player too far — resume patrol");
+                if (chase.player == null)
+                    chase.player = player;
+
+
+                chase.enabled = true;
             }
-            Patrol();
-            return;
-        }
 
-        // 🟡 玩家进入视野范围（detectRange）但未到追击距离
-        if (distanceToPlayer <= detectRange && distanceToPlayer > chaseTriggerRange)
-        {
-            // 可加一个“面向玩家”的逻辑
-            Vector2 direction = (player.position - transform.position).normalized;
-            transform.localScale = new Vector3(direction.x > 0 ? 1 : -1, 1, 1);
-            Debug.Log("🟡 Player detected but not close enough — watching");
-            Patrol(); // 仍然巡逻
-            return;
-        }
 
-        // 🔴 玩家进入追击范围
-        if (distanceToPlayer <= chaseTriggerRange && !isChasing)
-        {
-            isChasing = true;
-            Debug.Log($"🔴 Start chasing! Distance={distanceToPlayer:F2}");
-            GetComponent<EnemyChase>().enabled = true;
-            enabled = false; // 暂停巡逻逻辑
+            enabled = false;   // 停止巡逻逻辑
         }
     }
 
+
     void Patrol()
     {
+        // 当前巡逻目标点
         Transform target = patrolPoints[currentPoint];
+
+
+        // 移动到目标点
         transform.position = Vector2.MoveTowards(
             transform.position,
             target.position,
             speed * Time.deltaTime
         );
 
+
+        // ⭐⭐ 使用 rotation 翻转敌人朝向（不会影响移动）
+        Vector3 dir = target.position - transform.position;
+        HandleRotation(dir.x);
+
+
+        // 到达巡逻点 → 切换到下一个
         float distToTarget = Vector2.Distance(transform.position, target.position);
         if (distToTarget < 0.1f)
         {
             currentPoint = (currentPoint + 1) % patrolPoints.Length;
+        }
+    }
+
+
+    // 🔁 使用 rotation 翻转面朝方向（不会破坏移动）
+    void HandleRotation(float xDir)
+    {
+        if (xDir > 0)
+        {
+            transform.rotation = Quaternion.Euler(0, 0, 0);   // 面向右
+        }
+        else if (xDir < 0)
+        {
+            transform.rotation = Quaternion.Euler(0, 180, 0); // 面向左
         }
     }
 }
